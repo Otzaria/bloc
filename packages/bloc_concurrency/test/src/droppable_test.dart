@@ -7,6 +7,46 @@ import 'helpers.dart';
 
 void main() {
   group('droppable', () {
+    test('forwards synchronous mapper errors with their stack traces',
+        () async {
+      final expectedError = Exception('mapper failed');
+      late StackTrace expectedStackTrace;
+      final errors = <Object>[];
+      final stackTraces = <StackTrace>[];
+      final uncaughtErrors = <Object>[];
+      final done = Completer<void>();
+
+      runZonedGuarded(
+        () {
+          droppable<int>()(
+            Stream<int>.value(0),
+            (_) {
+              try {
+                throw expectedError;
+              } catch (error, stackTrace) {
+                expectedStackTrace = stackTrace;
+                rethrow;
+              }
+            },
+          ).listen(
+            null,
+            onError: (Object error, StackTrace stackTrace) {
+              errors.add(error);
+              stackTraces.add(stackTrace);
+            },
+            onDone: done.complete,
+          );
+        },
+        (error, stackTrace) => uncaughtErrors.add(error),
+      );
+
+      await done.future;
+
+      expect(errors, [same(expectedError)]);
+      expect(stackTraces.single.toString(), expectedStackTrace.toString());
+      expect(uncaughtErrors, isEmpty);
+    });
+
     test('processes only the current event and ignores remaining', () async {
       final states = <int>[];
       final bloc = CounterBloc(droppable())
@@ -113,12 +153,11 @@ void main() {
       final outputDone = Completer<void>();
       final received = <int>[];
 
-      final stream = droppable<int>()(source.stream, (event) async* {
+      droppable<int>()(source.stream, (event) async* {
         started.complete();
         await release.future;
         yield event;
-      });
-      stream.listen(received.add, onDone: outputDone.complete);
+      }).listen(received.add, onDone: outputDone.complete);
 
       source.add(7);
       await started.future;
@@ -149,12 +188,10 @@ void main() {
       final stackTraces = <StackTrace>[];
       final expectedError = StateError('mapper failed');
 
-      final output = droppable<int>()(source.stream, (event) {
+      droppable<int>()(source.stream, (event) {
         if (event == 0) throw expectedError;
         return Stream<int>.value(event);
-      });
-
-      output.listen(
+      }).listen(
         received.add,
         onError: (Object error, StackTrace stackTrace) {
           errors.add(error);
