@@ -189,11 +189,10 @@ void main() {
       final stacks = <StackTrace>[];
       final received = <int>[];
 
-      final output = droppable<int>()(source.stream, (event) {
+      droppable<int>()(source.stream, (event) {
         if (event == 0) return reused.stream;
         return Stream<int>.value(event);
-      });
-      output.listen(
+      }).listen(
         received.add,
         onError: (Object error, StackTrace stackTrace) {
           errors.add(error);
@@ -211,7 +210,7 @@ void main() {
 
       expect(errors, hasLength(1));
       expect(errors.single, isA<StateError>());
-      expect(stacks.single, isA<StackTrace>());
+      expect(stacks.single.toString(), contains('droppable.dart'));
       expect(received, [1]);
 
       await original.cancel();

@@ -46,18 +46,8 @@ class _ExhaustMapStreamTransformer<T> extends StreamTransformerBase<T, T> {
     subscription = stream.listen(
       (data) {
         if (mappedSubscription != null) return;
-        final Stream<T> mappedStream;
-
         try {
-          mappedStream = mapper(data);
-        } catch (error, stackTrace) {
-          // A synchronous mapper failure is an output stream error, not an
-          // uncaught zone error. Later source events remain eligible.
-          controller.addError(error, stackTrace);
-          return;
-        }
-        try {
-          mappedSubscription = mappedStream.listen(
+          mappedSubscription = mapper(data).listen(
             controller.add,
             onError: controller.addError,
             onDone: () {
@@ -66,8 +56,8 @@ class _ExhaustMapStreamTransformer<T> extends StreamTransformerBase<T, T> {
             },
           );
         } catch (error, stackTrace) {
-          // An already-listened single-subscription stream, or a custom
-          // stream failing in listen(), must not escape to the uncaught zone.
+          // A throwing mapper or listen() (e.g. an already-listened stream)
+          // is an output error, not an uncaught one; later events still run.
           controller.addError(error, stackTrace);
         }
       },
