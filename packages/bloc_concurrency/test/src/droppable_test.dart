@@ -174,7 +174,7 @@ void main() {
       expect(received, [1]);
     });
 
-    test('pauses both source and mapped streams to avoid buffering', () async {
+    test('pauses active mapped work without buffering source events', () async {
       var sourcePauses = 0;
       var sourceResumes = 0;
       var mappedPauses = 0;
@@ -196,7 +196,7 @@ void main() {
       await tick();
 
       subscription.pause();
-      expect(sourcePauses, 1);
+      expect(sourcePauses, 0);
       expect(mappedPauses, 1);
 
       mapped.add(9);
@@ -207,13 +207,36 @@ void main() {
       subscription.resume();
       await tick();
 
-      expect(sourceResumes, 1);
+      expect(sourceResumes, 0);
       expect(mappedResumes, 1);
       expect(received, [9]);
 
       await mapped.close();
       await source.close();
       await done.future.timeout(const Duration(seconds: 1));
+    });
+
+    test('pauses the input when there is no active mapped stream', () async {
+      var pauses = 0;
+      var resumes = 0;
+      final source = StreamController<int>(
+        onPause: () => pauses++,
+        onResume: () => resumes++,
+      );
+      final output = droppable<int>()(
+        source.stream,
+        (event) => Stream<int>.value(event),
+      );
+      final subscription = output.listen((_) {});
+
+      subscription.pause();
+      expect(pauses, 1);
+
+      subscription.resume();
+      expect(resumes, 1);
+
+      await subscription.cancel();
+      await source.close();
     });
 
     test('cancels source promptly if mapped cancellation stalls', () async {

@@ -25,9 +25,14 @@ class _ExhaustMapStreamTransformer<T> extends StreamTransformerBase<T, T> {
 
     final controller = StreamController<T>(
       onPause: () {
-        // Stop both upstream event delivery and active mapped emissions.
-        subscription.pause();
-        mappedSubscription?.pause();
+        if (mappedSubscription == null) {
+          // Backpressure when idle; no active event needs to be completed.
+          subscription.pause();
+        } else {
+          // Keep consuming and dropping new source events while the mapped
+          // output is paused, rather than buffering an unbounded input queue.
+          mappedSubscription!.pause();
+        }
       },
       onResume: () {
         mappedSubscription?.resume();
