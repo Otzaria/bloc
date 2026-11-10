@@ -214,6 +214,7 @@ void main() {
       await mapped.close();
       await source.close();
       await done.future.timeout(const Duration(seconds: 1));
+      await subscription.cancel();
     });
 
     test('pauses the input when there is no active mapped stream', () async {
@@ -227,9 +228,7 @@ void main() {
         source.stream,
         (event) => Stream<int>.value(event),
       );
-      final subscription = output.listen((_) {});
-
-      subscription.pause();
+      final subscription = output.listen((_) {})..pause();
       expect(pauses, 1);
 
       subscription.resume();

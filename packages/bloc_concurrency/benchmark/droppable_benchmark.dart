@@ -20,13 +20,12 @@ Future<void> _measureBurst(int count) async {
   final done = Completer<void>();
   var mappedCalls = 0;
 
-  final output = droppable<int>()(source.stream, (event) async* {
+  droppable<int>()(source.stream, (event) async* {
     mappedCalls++;
     started.complete();
     await release.future;
     yield event;
-  });
-  output.listen((_) {}, onDone: done.complete);
+  }).listen((_) {}, onDone: done.complete);
 
   source.add(0);
   await started.future;
