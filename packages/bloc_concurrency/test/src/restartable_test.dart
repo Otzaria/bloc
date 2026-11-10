@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bloc_concurrency/bloc_concurrency.dart';
 import 'package:test/test.dart';
 
@@ -107,5 +109,37 @@ void main() {
 
       expect(states, equals([1, 2, 3]));
     });
+
+    test('cancels stale mapped streams before delivering latest', () async {
+      final source = StreamController<int>();
+      final mapped = <int, StreamController<int>>{};
+      final cancelled = <int>[];
+      final received = <int>[];
+      final done = Completer<void>();
+
+      final output = restartable<int>()(source.stream, (event) {
+        final controller = StreamController<int>(
+          onCancel: () => cancelled.add(event),
+        );
+        mapped[event] = controller;
+        return controller.stream;
+      });
+      output.listen(received.add, onDone: done.complete);
+
+      source.add(1);
+      await tick();
+      source.add(2);
+      await tick();
+
+      expect(cancelled, [1]);
+
+      mapped[2]!.add(2);
+      await mapped[2]!.close();
+      await source.close();
+      await done.future.timeout(const Duration(seconds: 1));
+
+      expect(received, [2]);
+    });
+
   });
 }
