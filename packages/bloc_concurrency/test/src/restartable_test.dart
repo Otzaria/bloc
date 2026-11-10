@@ -117,14 +117,13 @@ void main() {
       final received = <int>[];
       final done = Completer<void>();
 
-      final output = restartable<int>()(source.stream, (event) {
+      restartable<int>()(source.stream, (event) {
         final controller = StreamController<int>(
           onCancel: () => cancelled.add(event),
         );
         mapped[event] = controller;
         return controller.stream;
-      });
-      output.listen(received.add, onDone: done.complete);
+      }).listen(received.add, onDone: done.complete);
 
       source.add(1);
       await tick();
@@ -139,6 +138,29 @@ void main() {
       await done.future.timeout(const Duration(seconds: 1));
 
       expect(received, [2]);
+    });
+
+    test('does not interrupt work started by a cancelled handler', () async {
+      final gates = {1: Completer<void>(), 2: Completer<void>()};
+      final states = <int>[];
+      final bloc = GatedBloc(restartable(), gates)
+        ..stream.listen(states.add)
+        ..add(1);
+      await tick();
+      bloc.add(2);
+      await tick();
+
+      gates[1]!.complete();
+      await tick();
+
+      expect(bloc.log, ['start 1', 'start 2', 'end 1, isDone: true']);
+
+      gates[2]!.complete();
+      await tick();
+
+      expect(bloc.log.last, 'end 2, isDone: false');
+      expect(states, [2]);
+      await bloc.close();
     });
   });
 }

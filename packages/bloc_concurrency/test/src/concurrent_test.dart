@@ -54,12 +54,11 @@ void main() {
       final received = <int>[];
       final done = Completer<void>();
 
-      final output = concurrent<int>()(source.stream, (event) async* {
+      concurrent<int>()(source.stream, (event) async* {
         started.add(event);
         await (event == 1 ? firstRelease.future : secondRelease.future);
         yield event;
-      });
-      output.listen(received.add, onDone: done.complete);
+      }).listen(received.add, onDone: done.complete);
 
       source
         ..add(1)

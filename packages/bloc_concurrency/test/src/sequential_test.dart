@@ -84,12 +84,11 @@ void main() {
       final received = <int>[];
       final done = Completer<void>();
 
-      final output = sequential<int>()(source.stream, (event) async* {
+      sequential<int>()(source.stream, (event) async* {
         started.add(event);
         if (event == 1) await firstRelease.future;
         yield event;
-      });
-      output.listen(received.add, onDone: done.complete);
+      }).listen(received.add, onDone: done.complete);
 
       source
         ..add(1)
@@ -104,6 +103,22 @@ void main() {
 
       expect(started, [1, 2]);
       expect(received, [1, 2]);
+    });
+
+    test('does not serialize handlers of other event types', () async {
+      final release = Completer<void>();
+      final bloc = TwoHandlerBloc(release.future)
+        ..add(SlowEvent())
+        ..add(FastEvent());
+      await tick();
+
+      expect(bloc.log, ['slow start', 'fast']);
+
+      release.complete();
+      await tick();
+
+      expect(bloc.log, ['slow start', 'fast', 'slow end']);
+      await bloc.close();
     });
   });
 }
