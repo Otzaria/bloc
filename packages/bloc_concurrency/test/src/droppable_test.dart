@@ -247,6 +247,21 @@ void main() {
       await mapped.close();
     });
 
+    test('releases the source when cancelled while idle', () async {
+      final source = StreamController<int>.broadcast();
+      final output = droppable<int>()(
+        source.stream,
+        (event) => Stream<int>.value(event),
+      );
+      final subscription = output.listen((_) {});
+
+      expect(source.hasListener, isTrue);
+      await subscription.cancel();
+      expect(source.hasListener, isFalse);
+
+      await source.close();
+    });
+
     test('drops a large burst without starting extra handlers', () async {
       final source = StreamController<int>(sync: true);
       final started = Completer<void>();
