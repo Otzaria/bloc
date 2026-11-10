@@ -56,14 +56,20 @@ class _ExhaustMapStreamTransformer<T> extends StreamTransformerBase<T, T> {
           controller.addError(error, stackTrace);
           return;
         }
-        mappedSubscription = mappedStream.listen(
-          controller.add,
-          onError: controller.addError,
-          onDone: () {
-            mappedSubscription = null;
-            maybeClose();
-          },
-        );
+        try {
+          mappedSubscription = mappedStream.listen(
+            controller.add,
+            onError: controller.addError,
+            onDone: () {
+              mappedSubscription = null;
+              maybeClose();
+            },
+          );
+        } catch (error, stackTrace) {
+          // An already-listened single-subscription stream, or a custom
+          // stream failing in listen(), must not escape to the uncaught zone.
+          controller.addError(error, stackTrace);
+        }
       },
       onError: controller.addError,
       onDone: () {
