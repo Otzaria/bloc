@@ -210,5 +210,80 @@ void main() {
       expect(stackTraces.single, isA<StackTrace>());
       expect(received, [1]);
     });
+
+    test('cancels source promptly if mapped cancellation stalls', () async {
+      final mappedCancelStarted = Completer<void>();
+      final mappedCancelRelease = Completer<void>();
+      final sourceCancelled = Completer<void>();
+      final source = StreamController<int>(
+        onCancel: sourceCancelled.complete,
+      );
+      final mapped = StreamController<int>(
+        onCancel: () {
+          mappedCancelStarted.complete();
+          return mappedCancelRelease.future;
+        },
+      );
+
+      final output = droppable<int>()(source.stream, (_) => mapped.stream);
+      final subscription = output.listen((_) {});
+      source.add(1);
+      await tick();
+
+      final cancelling = subscription.cancel();
+      await mappedCancelStarted.future.timeout(const Duration(seconds: 1));
+      try {
+        await sourceCancelled.future.timeout(const Duration(seconds: 1));
+      } finally {
+        mappedCancelRelease.complete();
+      }
+      await cancelling.timeout(const Duration(seconds: 1));
+      await source.close();
+      await mapped.close();
+    });
+
+    test('releases the source when cancelled while idle', () async {
+      final source = StreamController<int>.broadcast();
+      final output = droppable<int>()(
+        source.stream,
+        (event) => Stream<int>.value(event),
+      );
+      final subscription = output.listen((_) {});
+
+      expect(source.hasListener, isTrue);
+      await subscription.cancel();
+      expect(source.hasListener, isFalse);
+
+      await source.close();
+    });
+
+    test('drops a large burst without starting extra handlers', () async {
+      final source = StreamController<int>(sync: true);
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final done = Completer<void>();
+      var mapperCalls = 0;
+
+      final output = droppable<int>()(source.stream, (event) async* {
+        mapperCalls++;
+        started.complete();
+        await release.future;
+        yield event;
+      });
+      final received = <int>[];
+      output.listen(received.add, onDone: done.complete);
+
+      source.add(0);
+      await started.future;
+      for (var i = 1; i <= 10000; i++) {
+        source.add(i);
+      }
+      expect(mapperCalls, 1);
+
+      release.complete();
+      await source.close();
+      await done.future.timeout(const Duration(seconds: 1));
+      expect(received, [0]);
+    });
   });
 }
