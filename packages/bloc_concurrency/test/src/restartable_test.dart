@@ -140,6 +140,5 @@ void main() {
 
       expect(received, [2]);
     });
-
   });
 }

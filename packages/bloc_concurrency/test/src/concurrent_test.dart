@@ -76,6 +76,5 @@ void main() {
 
       expect(received, [2, 1]);
     });
-
   });
 }

@@ -105,6 +105,5 @@ void main() {
       expect(started, [1, 2]);
       expect(received, [1, 2]);
     });
-
   });
 }
