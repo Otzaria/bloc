@@ -105,5 +105,74 @@ void main() {
 
       expect(states, isEmpty);
     });
+
+    test('closes the output after an in-flight mapped event', () async {
+      final source = StreamController<int>();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final outputDone = Completer<void>();
+      final received = <int>[];
+
+      final stream = droppable<int>()(source.stream, (event) async* {
+        started.complete();
+        await release.future;
+        yield event;
+      });
+      stream.listen(received.add, onDone: outputDone.complete);
+
+      source.add(7);
+      await started.future;
+      await source.close();
+
+      expect(outputDone.isCompleted, isFalse);
+
+      release.complete();
+      await outputDone.future.timeout(const Duration(seconds: 1));
+
+      expect(received, [7]);
+    });
+
+    test('closes the output immediately when no event is in flight', () async {
+      final output = droppable<int>()(
+        const Stream<int>.empty(),
+        (event) => Stream<int>.value(event),
+      );
+
+      expect(await output.toList(), isEmpty);
+    });
+
+    test('forwards synchronous mapper errors and handles later events',
+        () async {
+      final source = StreamController<int>();
+      final outputDone = Completer<void>();
+      final received = <int>[];
+      final errors = <Object>[];
+      final stackTraces = <StackTrace>[];
+      final expectedError = StateError('mapper failed');
+
+      final output = droppable<int>()(source.stream, (event) {
+        if (event == 0) throw expectedError;
+        return Stream<int>.value(event);
+      });
+
+      output.listen(
+        received.add,
+        onError: (Object error, StackTrace stackTrace) {
+          errors.add(error);
+          stackTraces.add(stackTrace);
+        },
+        onDone: outputDone.complete,
+      );
+
+      source.add(0);
+      await tick();
+      source.add(1);
+      await source.close();
+      await outputDone.future.timeout(const Duration(seconds: 1));
+
+      expect(errors, [same(expectedError)]);
+      expect(stackTraces.single, isA<StackTrace>());
+      expect(received, [1]);
+    });
   });
 }

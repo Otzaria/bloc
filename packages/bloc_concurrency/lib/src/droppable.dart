@@ -21,6 +21,7 @@ class _ExhaustMapStreamTransformer<T> extends StreamTransformerBase<T, T> {
   Stream<T> bind(Stream<T> stream) {
     late StreamSubscription<T> subscription;
     StreamSubscription<T>? mappedSubscription;
+    var isSourceDone = false;
 
     final controller = StreamController<T>(
       onCancel: () async {
@@ -30,20 +31,40 @@ class _ExhaustMapStreamTransformer<T> extends StreamTransformerBase<T, T> {
       sync: true,
     );
 
+    // The source may finish before the active mapped stream has completed.
+    void maybeClose() {
+      if (isSourceDone && mappedSubscription == null) {
+        controller.close();
+      }
+    }
+
     subscription = stream.listen(
       (data) {
         if (mappedSubscription != null) return;
         final Stream<T> mappedStream;
 
-        mappedStream = mapper(data);
+        try {
+          mappedStream = mapper(data);
+        } catch (error, stackTrace) {
+          // A synchronous mapper failure is an output stream error, not an
+          // uncaught zone error. Later source events remain eligible.
+          controller.addError(error, stackTrace);
+          return;
+        }
         mappedSubscription = mappedStream.listen(
           controller.add,
           onError: controller.addError,
-          onDone: () => mappedSubscription = null,
+          onDone: () {
+            mappedSubscription = null;
+            maybeClose();
+          },
         );
       },
       onError: controller.addError,
-      onDone: () => mappedSubscription ?? controller.close(),
+      onDone: () {
+        isSourceDone = true;
+        maybeClose();
+      },
     );
 
     return controller.stream;
