@@ -141,8 +141,7 @@ void main() {
       expect(await output.toList(), isEmpty);
     });
 
-    test('forwards synchronous mapper errors and handles later events',
-        () async {
+    test('forwards mapper errors and handles later events', () async {
       final source = StreamController<int>();
       final outputDone = Completer<void>();
       final received = <int>[];
