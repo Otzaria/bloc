@@ -173,5 +173,107 @@ void main() {
       expect(stackTraces.single, isA<StackTrace>());
       expect(received, [1]);
     });
+
+    test('pauses both source and mapped streams to avoid buffering', () async {
+      var sourcePauses = 0;
+      var sourceResumes = 0;
+      var mappedPauses = 0;
+      var mappedResumes = 0;
+      final source = StreamController<int>(
+        onPause: () => sourcePauses++,
+        onResume: () => sourceResumes++,
+      );
+      final mapped = StreamController<int>(
+        onPause: () => mappedPauses++,
+        onResume: () => mappedResumes++,
+      );
+      final received = <int>[];
+      final done = Completer<void>();
+      final output = droppable<int>()(source.stream, (_) => mapped.stream);
+      final subscription = output.listen(received.add, onDone: done.complete);
+
+      source.add(1);
+      await tick();
+
+      subscription.pause();
+      expect(sourcePauses, 1);
+      expect(mappedPauses, 1);
+
+      mapped.add(9);
+      source.add(2);
+      await tick();
+      expect(received, isEmpty);
+
+      subscription.resume();
+      await tick();
+
+      expect(sourceResumes, 1);
+      expect(mappedResumes, 1);
+      expect(received, [9]);
+
+      await mapped.close();
+      await source.close();
+      await done.future.timeout(const Duration(seconds: 1));
+    });
+
+    test('cancels source promptly if mapped cancellation stalls', () async {
+      final mappedCancelStarted = Completer<void>();
+      final mappedCancelRelease = Completer<void>();
+      final sourceCancelled = Completer<void>();
+      final source = StreamController<int>(
+        onCancel: sourceCancelled.complete,
+      );
+      final mapped = StreamController<int>(
+        onCancel: () {
+          mappedCancelStarted.complete();
+          return mappedCancelRelease.future;
+        },
+      );
+
+      final output = droppable<int>()(source.stream, (_) => mapped.stream);
+      final subscription = output.listen((_) {});
+      source.add(1);
+      await tick();
+
+      final cancelling = subscription.cancel();
+      await mappedCancelStarted.future.timeout(const Duration(seconds: 1));
+      try {
+        await sourceCancelled.future.timeout(const Duration(seconds: 1));
+      } finally {
+        mappedCancelRelease.complete();
+      }
+      await cancelling.timeout(const Duration(seconds: 1));
+      await source.close();
+      await mapped.close();
+    });
+
+    test('drops a large burst without starting extra handlers', () async {
+      final source = StreamController<int>(sync: true);
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final done = Completer<void>();
+      var mapperCalls = 0;
+
+      final output = droppable<int>()(source.stream, (event) async* {
+        mapperCalls++;
+        started.complete();
+        await release.future;
+        yield event;
+      });
+      final received = <int>[];
+      output.listen(received.add, onDone: done.complete);
+
+      source.add(0);
+      await started.future;
+      for (var i = 1; i <= 10000; i++) {
+        source.add(i);
+      }
+      expect(mapperCalls, 1);
+
+      release.complete();
+      await source.close();
+      await done.future.timeout(const Duration(seconds: 1));
+      expect(received, [0]);
+    });
   });
 }

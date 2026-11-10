@@ -24,9 +24,24 @@ class _ExhaustMapStreamTransformer<T> extends StreamTransformerBase<T, T> {
     var isSourceDone = false;
 
     final controller = StreamController<T>(
-      onCancel: () async {
-        await mappedSubscription?.cancel();
-        return subscription.cancel();
+      onPause: () {
+        // Stop both upstream event delivery and active mapped emissions.
+        subscription.pause();
+        mappedSubscription?.pause();
+      },
+      onResume: () {
+        mappedSubscription?.resume();
+        subscription.resume();
+      },
+      onCancel: () {
+        // Initiate both cancellations immediately. A slow mapped stream must
+        // not delay releasing the source event subscription.
+        final mappedCancellation = mappedSubscription?.cancel();
+        final sourceCancellation = subscription.cancel();
+        if (mappedCancellation == null) return sourceCancellation;
+        return Future.wait<void>(
+          [mappedCancellation, sourceCancellation],
+        ).then<void>((_) {});
       },
       sync: true,
     );
