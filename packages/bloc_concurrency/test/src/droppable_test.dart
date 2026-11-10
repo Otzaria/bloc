@@ -180,6 +180,44 @@ void main() {
       expect(await output.toList(), isEmpty);
     });
 
+    test('forwards synchronous mapped subscription errors', () async {
+      final reused = StreamController<int>();
+      final original = reused.stream.listen((_) {});
+      final source = StreamController<int>();
+      final done = Completer<void>();
+      final errors = <Object>[];
+      final stacks = <StackTrace>[];
+      final received = <int>[];
+
+      final output = droppable<int>()(source.stream, (event) {
+        if (event == 0) return reused.stream;
+        return Stream<int>.value(event);
+      });
+      output.listen(
+        received.add,
+        onError: (Object error, StackTrace stackTrace) {
+          errors.add(error);
+          stacks.add(stackTrace);
+        },
+        onDone: done.complete,
+      );
+
+      // listen() throws for an already-listened single-subscription stream.
+      source.add(0);
+      await tick();
+      source.add(1);
+      await source.close();
+      await done.future.timeout(const Duration(seconds: 1));
+
+      expect(errors, hasLength(1));
+      expect(errors.single, isA<StateError>());
+      expect(stacks.single, isA<StackTrace>());
+      expect(received, [1]);
+
+      await original.cancel();
+      await reused.close();
+    });
+
     test('forwards mapper errors and handles later events', () async {
       final source = StreamController<int>();
       final outputDone = Completer<void>();
